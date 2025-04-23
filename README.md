@@ -24,34 +24,36 @@
 ## Setup environment
 
 ``` shell
-$ python -m venv .venv
-$ source .venv/bin/activate
-$ pip install -r requirements.txt
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ## Unit test
 
 ``` shell
-$ bash tests/test_all.bash
-or
-$ python tests/test_data_loader.py
-$ python tests/test_data_processor.py
-$ python tests/test_rhythm_classifier.py
+bash tests/test_all.bash
+```
+or run individually
+```
+python tests/test_data_loader.py
+python tests/test_data_processor.py
+python tests/test_rhythm_classifier.py
 ```
 
 ## Signal visualisation (before and after preprocessing)
 
 ``` shell
-$ python scripts/main_plot_preprocess.py
+python scripts/main_plot_preprocess.py
 ```
 
 ## Computed metrics comarison with expected result
 
 ``` shell
-$ python scripts/main_compare_metrics.py
+python scripts/main_compare_metrics.py
 ```
 
 ## Rhythm classifier
 ``` shell
-$ python scripts/main_rhythm_classifier.py
+python scripts/main_rhythm_classifier.py
 ```
