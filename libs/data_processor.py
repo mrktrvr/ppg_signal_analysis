@@ -30,14 +30,15 @@ class DataProcessor:
         savgol_polyorder (float): savgol filger polyorder
         '''
         self.fs = args.get('fs', 75)
-        self.bandpass_lowcut = args.get('bandpass_lowcut', 0.5)
-        self.bandpass_highcut = args.get('bandpass_highcut', 5)
-        self.bandpass_order = args.get('bandpass_order', 2)
-        self.peak_distance_factor = args.get('peak_distance_factor', 0.5)
-        self.peak_prominence_factor = args.get('peak_prominence_factor', 0.5)
-        self.uniform_filter_size = args.get('uniform_filter_size', 0)
-        self.savgol_win_len = args.get('savgol_win_len', 21)
-        self.savgol_polyorder = args.get('savgol_polyorder', 2)
+        self.bandpass_lowcut = args.get('bandpass_lowcut', 0.3)
+        self.bandpass_highcut = args.get('bandpass_highcut', 2.5)
+        self.bandpass_order = args.get('bandpass_order', 5)
+        self.peak_distance_factor = args.get('peak_distance_factor', 0.4)
+        self.peak_prominence_factor = args.get('peak_prominence_factor', 0.001)
+        self.peak_height_factor = args.get('peak_height_factor', 0.2)
+        self.uniform_filter_size = args.get('uniform_filter_size', 30)
+        self.savgol_win_len = args.get('savgol_win_len', 0)
+        self.savgol_polyorder = args.get('savgol_polyorder', 5)
 
         self.channels = ['Red', 'Green', 'Blue']
         self.metric_names = ['HR', 'rMSSD', 'SDNN', 'pNN50']
@@ -85,7 +86,11 @@ class DataProcessor:
         '''
         step = 1 / self.fs
         new_times = np.arange(org_times[0], org_times[-1], step)
-        prms = dict(kind='linear', fill_value='extrapolate')
+        prms = dict(
+            # kind='linear',
+            kind='cubic',
+            fill_value='extrapolate',
+        )
         interp_func = interp1d(org_times, org_sig, **prms)
         new_signal = interp_func(new_times)
         return new_times, new_signal
@@ -130,11 +135,14 @@ class DataProcessor:
 
         '''
         # --- Savitzky-Golay smoothing
-        smoothed = savgol_filter(
-            signal,
-            window_length=self.savgol_win_len,
-            polyorder=self.savgol_polyorder,
-        )
+        if self.savgol_win_len == 0 or self.savgol_polyorder == 0:
+            smoothed = signal
+        else:
+            smoothed = savgol_filter(
+                signal,
+                window_length=self.savgol_win_len,
+                polyorder=self.savgol_polyorder,
+            )
         return smoothed
 
     def min_max_scale(self, src):
@@ -183,12 +191,25 @@ class DataProcessor:
     def find_peaks(self, signal):
         '''
         '''
-        distance = self.fs * self.peak_distance_factor
-        prominence = np.std(signal) * self.peak_prominence_factor
+        if self.peak_distance_factor == 0:
+            distance = None
+        else:
+            distance = self.fs * self.peak_distance_factor
+        if self.peak_prominence_factor == 0:
+            prominence = None
+        else:
+            prominence = np.std(signal) * self.peak_prominence_factor
+        if self.peak_height_factor == 0:
+            height = None
+        else:
+            sig_max = signal.max()
+            sig_min = signal.min()
+            height = self.peak_height_factor * (sig_max - sig_min) + sig_min
         peaks, _ = find_peaks(
             signal,
             distance=distance,
             prominence=prominence,
+            height=height,
         )
 
         return peaks
