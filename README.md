@@ -1,6 +1,17 @@
+# PPG Signal Analysis
+A Python-based pipeline for processing photoplethysmography (PPG) signals from RGB channels to extract cardiac metrics and classify cardiac rhythms, such as sinus rhythm and atrial fibrillation (AFib).
+
+## Overview
+This project processes RGB PPG signals captured from mobile optical sensors. It includes:​
+- Signal pre-processing (interpolation, filtering)
+- Peak detection
+- Cardiac metric computation (HR, rMSSD, SDNN, pNN50)
+- Rule-based Rhythm classification (Regular vs. Irregular)​
+
 ## Files
 
 ``` bash
+.
 ├── data                # data directory, put data here.
 ├── libs                # core modules
 │   ├── data_processor.py           # data preprocess and feature extraction
