@@ -5,8 +5,6 @@
 ├── libs                # core modules
 │   ├── data_processor.py           # data preprocess and feature extraction
 │   └── rhythm_classifier.py        # rhythm classiier class module
-├── README.md           # This file
-├── requirements.txt    # python required libraries
 ├── scripts             # main scripts
 │   ├── main_compare_metrics.py     # main script to compare metrics
 │   ├── main_plot_preprocess.py     # main script to plot signals
@@ -17,8 +15,10 @@
 │   ├── test_data_loader.py         # test for data loading functions
 │   ├── test_data_processor.py      # test for data processor
 │   └── test_rhythm_classifier.py   # test for rhythm classifier
-└── utils               # utility modules
-    └── data_loader.py            # Data loading functions
+├── utils               # utility modules
+│   └── data_loader.py            # Data loading functions
+├── README.md           # This file
+└── requirements.txt    # python required libraries
 ```
 
 ## Setup environment
