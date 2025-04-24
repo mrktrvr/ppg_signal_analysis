@@ -12,8 +12,16 @@ from utils.data_loader import expected_results_df
 from libs.data_processor import DataProcessor
 
 
-def _plot_avg_bar(avg_df, std_df, fig_path, title):
-    text_prm = dict(va='bottom', ha='center', rotation=90, fontsize='small')
+def _plot_avg_std(avg_df, std_df, title, fig_path):
+    '''
+    Plot averages with error bars (standard deviation)
+
+    avg_df (pd.DataFrame): average values
+    std_df (pd.DataFrame): standard variation to show error bar
+    title (str): title of the chart
+    fig_path (str): path to save figure
+    '''
+    # text_prm = dict(va='bottom', ha='center', rotation=90, fontsize='small')
     n_chs = avg_df.shape[1]
     margin = 0.05
     w = (1 - 2 * margin) / n_chs
@@ -24,15 +32,16 @@ def _plot_avg_bar(avg_df, std_df, fig_path, title):
         ypos = vals.values
         xpos = np.arange(len(ypos)) + shift + margin
         color = ch.lower()
-        ax.bar(xpos, ypos, color=color, width=w, label=ch)
+        # ax.bar(xpos, ypos, color=color, width=w, label=ch)
+        # ax.scatter(xpos, ypos, color=color, marker='+', label=ch)
         ax.errorbar(xpos, ypos, yerr=std_df[ch], color=color, fmt='x')
-        for x, y in zip(xpos, ypos):
-            ax.text(x, 0, '%.1f' % y, **text_prm)
+        # for x, y in zip(xpos, ypos):
+        #     ax.text(x, y, '%.1f' % y, **text_prm)
     ax.set_xticks(np.arange(len(avg_df)) + 0.5)
     ax.set_xticklabels(avg_df.index)
     ax.tick_params(axis='x', labelsize='small')
     ax.tick_params(axis='y', labelsize='small')
-    ax.legend(loc=0, fontsize='x-small')
+    # ax.legend(loc=0, fontsize='x-small')
     ax.grid(True)
     ax.set_xlabel('Metric', fontsize='x-small')
     ax.set_ylabel('Delta', fontsize='x-small')
@@ -47,6 +56,15 @@ def _plot_avg_bar(avg_df, std_df, fig_path, title):
 
 
 def _plot_multi_bar(dfs, metric_names, suptitle, fig_path=''):
+    '''
+    plot multi-bar chart
+
+    @Args
+    dfs (dict of pd.DataFrame): {channel: df of metrics for each signal}
+    metric names (list of str): metric names
+    suptitle (str): title text
+    fig_path: path to save figure
+    '''
     n_chs = len(dfs)
     margin = 0.05
     w = (1 - 2 * margin) / n_chs
@@ -78,7 +96,10 @@ def _plot_multi_bar(dfs, metric_names, suptitle, fig_path=''):
         plt.close()
 
 
-class Metrics(DataProcessor):
+class MetricsComparisonData(DataProcessor):
+    '''
+    Computes cardiac metrics and compare with expected metrics
+    '''
 
     def __init__(self):
         '''
@@ -92,6 +113,22 @@ class Metrics(DataProcessor):
         self.all_metrics_df = None
         self.compared_df = None
         self.batch_process()
+
+    def batch_process(self):
+        '''
+        Data preparation
+        computed_metrics_df: Computed metrics for all data and chs
+        expected_metrics_df: Expected result
+        all_metrics_df: computed_metrics_df + expected_metrics_df
+        compared_df: differences between computed and expected metrics
+        '''
+        self.computed_metrics_df = self._processed_metrics()
+        self.expected_metrics_df = self._expected_metrics()
+        self.all_metrics_df = self._merge_dfs(
+            self.computed_metrics_df,
+            self.expected_metrics_df,
+        )
+        self.compared_df = self._comparison()
 
     def _processed_metrics(self):
         '''
@@ -152,21 +189,16 @@ class Metrics(DataProcessor):
         df = pd.concat(df_list, axis=1)
         return df
 
-    def batch_process(self):
+
+class MetricsComparison(MetricsComparisonData):
+    '''
+    Computes cardiac metrics and compare with the expected result.
+    '''
+
+    def __init__(self):
         '''
-        Data preparation
-        computed_metrics_df: Computed metrics for all data and chs
-        expected_metrics_df: Expected result
-        all_metrics_df: computed_metrics_df + expected_metrics_df
-        compared_df: differences between computed and expected metrics
         '''
-        self.computed_metrics_df = self._processed_metrics()
-        self.expected_metrics_df = self._expected_metrics()
-        self.all_metrics_df = self._merge_dfs(
-            self.computed_metrics_df,
-            self.expected_metrics_df,
-        )
-        self.compared_df = self._comparison()
+        MetricsComparisonData.__init__(self)
 
     def df_selecter(self, tar_str, df=None):
         '''
@@ -232,7 +264,7 @@ class Metrics(DataProcessor):
         fpath_tmp = os.path.join(res_dir, 'metrics_%s.png')
         # --- 3 channels
         fig_path = fpath_tmp % '3channels'
-        suptitle = 'Computed Metrics'
+        suptitle = 'Computed MetricsComparison'
         _plot_multi_bar(dfs, self.metric_names, suptitle, fig_path)
         # --- Each channel
         for ch in self.channels:
@@ -246,7 +278,7 @@ class Metrics(DataProcessor):
         avg_df = pd.DataFrame(avgs, index=self.metric_names)
         std_df = pd.DataFrame(stds, index=self.metric_names)
         title = 'Average Computed Metrics'
-        _plot_avg_bar(avg_df, std_df, fig_path, title)
+        _plot_avg_std(avg_df, std_df, title, fig_path)
 
     def plot_metric_diffs(self, res_dir):
         '''
@@ -286,22 +318,22 @@ class Metrics(DataProcessor):
         avg_df = pd.DataFrame(avgs, index=self.metric_names)
         std_df = pd.DataFrame(stds, index=self.metric_names)
         title = 'Average difference between Computed and Expected Metrics'
-        _plot_avg_bar(avg_df, std_df, fig_path, title)
+        _plot_avg_std(avg_df, std_df, title, fig_path)
 
 
 def main():
     res_dir = os.path.join(ROOT_DIR, 'res', 'metrics')
     if not os.path.exists(res_dir):
         os.makedirs(res_dir)
-    metrics = Metrics()
+    metrics_comparison = MetricsComparison()
     # --- Show each metric
-    metrics.show_each_metric()
+    metrics_comparison.show_each_metric()
     # --- Show metrics for each channel
-    metrics.show_each_channel()
+    metrics_comparison.show_each_channel()
     # --- Plot metrics
-    metrics.plot_metrics(res_dir)
+    metrics_comparison.plot_metrics(res_dir)
     # --- Plot metric comparison
-    metrics.plot_metric_diffs(res_dir)
+    metrics_comparison.plot_metric_diffs(res_dir)
 
 
 if __name__ == '__main__':
