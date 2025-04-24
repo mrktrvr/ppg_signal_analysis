@@ -53,18 +53,19 @@ python tests/test_rhythm_classifier.py
 ```
 
 ## Signal visualisation (before and after preprocessing)
-
+This script is to process the preprocessing for signals and create time series chart to show before and after preprocessing signals. The images will be stored in `res/raw_vs_filtered/` directory.
 ``` shell
 python scripts/main_plot_preprocess.py
 ```
 
 ## Computed metrics comarison with expected result
-
+This script is to compute cardiac metrics and compare with the expected result. Images will be stored in `res/metrics/` directory.
 ``` shell
 python scripts/main_compare_metrics.py
 ```
 
 ## Rhythm classifier
+This script is to predict Sinus rhythm or atrial fibrillation (AFib) from signals. The result will be stored in `res/classification/` directory.
 ``` shell
 python scripts/main_rhythm_classifier.py
 ```
