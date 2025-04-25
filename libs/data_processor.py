@@ -12,7 +12,13 @@ from scipy.interpolate import interp1d
 from scipy.ndimage import uniform_filter1d
 
 
-class DataProcessor:
+class PreProcessor():
+    '''
+    Data preprocessing
+
+    preprocessor = PreProcessor()
+    timestamps, signal = preprocessor.preprocess(df, ch)
+    '''
 
     def __init__(self, **args):
         '''
@@ -21,10 +27,6 @@ class DataProcessor:
         bandpass_lowcut (float): lowcut of bandpass, nyq * lowcut
         bandpass_highcut (float): highcut of bandpass, nyq * highcut
         bandpass_order (int): order ob bandpass filter
-        peak_distance_factor (float): factor of find_peak distance
-                                      fs * peak_distance_factor
-        peak_prominence_factor (float): factor of find_peak prominence
-                                        np.std(signal) * peak_prominence_factor
         uniform_filter_size (int): size of uniform_filter1d
         savgol_win_len (float): savgol filter window length
         savgol_polyorder (float): savgol filger polyorder
@@ -33,14 +35,9 @@ class DataProcessor:
         self.bandpass_lowcut = args.get('bandpass_lowcut', 0.5)
         self.bandpass_highcut = args.get('bandpass_highcut', 5)
         self.bandpass_order = args.get('bandpass_order', 2)
-        self.peak_distance_factor = args.get('peak_distance_factor', 0.5)
-        self.peak_prominence_factor = args.get('peak_prominence_factor', 0.5)
         self.uniform_filter_size = args.get('uniform_filter_size', 0)
         self.savgol_win_len = args.get('savgol_win_len', 21)
         self.savgol_polyorder = args.get('savgol_polyorder', 2)
-
-        self.channels = ['Red', 'Green', 'Blue']
-        self.metric_names = ['HR', 'rMSSD', 'SDNN', 'pNN50']
 
     def bandpass_filter(self, signal, lowcut=None, highcut=None, order=None):
         '''
@@ -73,7 +70,8 @@ class DataProcessor:
 
     def _sig_reg_liner_interp(self, org_times, org_sig):
         '''
-        Interpolate signal to regular time intervals using linear interpolation
+        Interpolate signal to regularise time intervals
+        using linear interpolation
 
         @Args
         org_times (pd.Series): Original timestamps
@@ -91,6 +89,17 @@ class DataProcessor:
         return new_times, new_signal
 
     def _sig_reg_skip_gaps(self, org_times, org_sig):
+        '''
+        Regularise time intervals by modifying timestamps
+
+        @Args
+        org_times (pd.Series): Original timestamps
+        org_sig (pd.Series): Original signal
+
+        @Returns:
+        new_time (np.array): regularised timestamps
+        new_signal (np.array): interpolated signal
+        '''
         new_sig = org_sig
         step = 1 / self.fs
         dlt = np.diff(org_times, prepend=-step)
@@ -161,8 +170,8 @@ class DataProcessor:
         ch (str): Target channel, 'Red', 'Green' or 'Blue'
 
         @Returns
-        new_times (np.array): processed timestamps
-        new_signal (np.array): processed signal
+        times (np.array): processed timestamps
+        signal (np.array): processed signal
         '''
         # --- data
         times = df['time'].values
@@ -180,8 +189,37 @@ class DataProcessor:
         # signal = self.min_max_scale(signal)
         return times, signal
 
+
+class MetricsExtractor():
+    '''
+    metric extractor from PPG signal
+
+    metric_extractor = MetricExtractor()
+    metrics = self.metrics_extractor(timestamps, signal)
+    '''
+
+    def __init__(self, **args):
+        '''
+        @Args
+        fs (float): sampling frequency, Default 75, nyq = 0.5 * fs
+        peak_distance_factor (float): factor of find_peak distance
+                                      fs * peak_distance_factor
+        peak_prominence_factor (float): factor of find_peak prominence
+                                        np.std(signal) * peak_prominence_factor
+        '''
+        self.fs = args.get('fs', 75)
+        self.peak_distance_factor = args.get('peak_distance_factor', 0.5)
+        self.peak_prominence_factor = args.get('peak_prominence_factor', 0.5)
+
     def find_peaks(self, signal):
         '''
+        Find peaks from signal
+
+        @Args
+        signal (np.array): processed signal
+
+        @Returns
+        peaks (np.array): Indices of peaks in signal
         '''
         distance = self.fs * self.peak_distance_factor
         prominence = np.std(signal) * self.peak_prominence_factor
@@ -190,7 +228,6 @@ class DataProcessor:
             distance=distance,
             prominence=prominence,
         )
-
         return peaks
 
     def metrics_extractor(self, times, signal):
@@ -227,6 +264,32 @@ class DataProcessor:
             'pNN50': pnn50,
         }
         return metrics
+
+
+class DataProcessor(PreProcessor, MetricsExtractor):
+    '''
+    '''
+
+    def __init__(self, **args):
+        '''
+        @Args
+        fs (float): sampling frequency, Default 75, nyq = 0.5 * fs
+        bandpass_lowcut (float): lowcut of bandpass, nyq * lowcut
+        bandpass_highcut (float): highcut of bandpass, nyq * highcut
+        bandpass_order (int): order ob bandpass filter
+        uniform_filter_size (int): size of uniform_filter1d
+        savgol_win_len (float): savgol filter window length
+        savgol_polyorder (float): savgol filger polyorder
+        peak_distance_factor (float): factor of find_peak distance
+                                      fs * peak_distance_factor
+        peak_prominence_factor (float): factor of find_peak prominence
+                                        np.std(signal) * peak_prominence_factor
+        '''
+        PreProcessor.__init__(self, **args)
+        MetricsExtractor.__init__(self, **args)
+
+        self.channels = ['Red', 'Green', 'Blue']
+        self.metric_names = ['HR', 'rMSSD', 'SDNN', 'pNN50']
 
     def process(self, df, ch):
         '''
