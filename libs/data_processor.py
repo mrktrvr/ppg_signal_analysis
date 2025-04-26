@@ -161,21 +161,18 @@ class PreProcessor():
         dst = scaler.fit_transform(np.atleast_2d(src).T)[:, 0]
         return dst
 
-    def preprocess(self, df, ch):
+    def preprocess(self, times, signal):
         '''
         Signal Preprocessing
 
         @Args
-        df (pd.DataFrame): Original RGB signal values with timestamps
-        ch (str): Target channel, 'Red', 'Green' or 'Blue'
+        times (np.array): raw timestamps
+        signal (np.array): raw signal
 
         @Returns
         times (np.array): processed timestamps
         signal (np.array): processed signal
         '''
-        # --- data
-        times = df['time'].values
-        signal = df[ch].values
         # --- uniform filter
         if self.uniform_filter_size != 0:
             signal = uniform_filter1d(signal, size=self.uniform_filter_size)
@@ -303,8 +300,9 @@ class DataProcessor(PreProcessor, MetricsExtractor):
         metrics (dict): Computed metrics
                         HR, rMSSD, SDNN, pNN50, and number of peaks
         '''
-        timestamps, signal = self.preprocess(df, ch)
-        metrics = self.metrics_extractor(timestamps, signal)
+        times, signal = df['time'].values, df[ch].values
+        times, signal = self.preprocess(times, signal)
+        metrics = self.metrics_extractor(times, signal)
         return metrics
 
 
