@@ -70,16 +70,17 @@ class Plotter(DataProcessor):
         self.filt_peaks = {}
         self.is_filt_time_gaps = {}
         # --- raw data
-        self.raw_time = df['time']
+        self.raw_time = np.copy(df['time'].values)
         # --- mask to find time gap in raw data
         raw_time_dlt = np.diff(self.raw_time, prepend=0)
         self.is_raw_time_gap = raw_time_dlt > self.time_delta_th
         # --- Create plotting data for each channel
         for ch in self.channels:
-            # --- preprocessing
-            filt_time, filt_data = self.preprocess(df, ch)
             # --- raw data
-            self.raw_data[ch] = df[ch]
+            self.raw_data[ch] = np.copy(df[ch].values)
+            # --- preprocessing
+            filt_time, filt_data = self.preprocess(self.raw_time,
+                                                   self.raw_data[ch])
             # --- processed data
             self.filt_data[ch] = filt_data
             # --- timestamps for processed data
