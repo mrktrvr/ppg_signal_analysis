@@ -11,6 +11,13 @@ from utils.data_loader import iter_data_df
 from utils.data_loader import expected_results_df
 from libs.data_processor import DataProcessor
 
+COLOR_MAP = {
+    'Red': 'red',
+    'Green': 'green',
+    'Blue': 'blue',
+    'Expected': 'purple',
+}
+
 
 def _plot_avg_std(avg_df, std_df, title, fig_path):
     '''
@@ -22,6 +29,7 @@ def _plot_avg_std(avg_df, std_df, title, fig_path):
     fig_path (str): path to save figure
     '''
     # text_prm = dict(va='bottom', ha='center', rotation=90, fontsize='small')
+    text_prm = dict(va='bottom', ha='center', fontsize='small')
     n_chs = avg_df.shape[1]
     margin = 0.05
     w = (1 - 2 * margin) / n_chs
@@ -31,12 +39,12 @@ def _plot_avg_std(avg_df, std_df, title, fig_path):
         shift = (w / 2.0 + w * i)
         ypos = vals.values
         xpos = np.arange(len(ypos)) + shift + margin
-        color = ch.lower()
+        color = COLOR_MAP.get(ch, 'black')
         # ax.bar(xpos, ypos, color=color, width=w, label=ch)
         # ax.scatter(xpos, ypos, color=color, marker='+', label=ch)
         ax.errorbar(xpos, ypos, yerr=std_df[ch], color=color, fmt='x')
-        # for x, y in zip(xpos, ypos):
-        #     ax.text(x, y, '%.1f' % y, **text_prm)
+        for x, y in zip(xpos, ypos):
+            ax.text(x, y, '%.1f' % y, **text_prm)
     ax.set_xticks(np.arange(len(avg_df)) + 0.5)
     ax.set_xticklabels(avg_df.index)
     ax.tick_params(axis='x', labelsize='small')
@@ -74,7 +82,7 @@ def _plot_multi_bar(dfs, metric_names, suptitle, fig_path=''):
             shift = (w / 2.0 + w * i)
             ypos = cur_df[metric]
             xpos = np.arange(len(ypos)) + shift + margin
-            color = ch.lower()
+            color = COLOR_MAP.get(ch, 'black')
             ax.bar(xpos, ypos, color=color, width=w, label=ch)
             ax.plot(xpos, ypos, '_', color=color)
             ax.set_title(metric, fontsize='x-small')
@@ -124,10 +132,13 @@ class MetricsComparisonData(DataProcessor):
         '''
         self.computed_metrics_df = self._processed_metrics()
         self.expected_metrics_df = self._expected_metrics()
-        self.all_metrics_df = self._merge_dfs(
-            self.computed_metrics_df,
-            self.expected_metrics_df,
-        )
+        comp_df = self.computed_metrics_df
+        expt_df = self.expected_metrics_df.copy()
+        expt_df.columns = [
+            self.splitter.join([self.expt_ch, x])
+            if x in self.metric_names else x for x in expt_df.columns
+        ]
+        self.all_metrics_df = self._merge_dfs(comp_df, expt_df)
         self.compared_df = self._comparison()
 
     def _processed_metrics(self):
@@ -151,10 +162,6 @@ class MetricsComparisonData(DataProcessor):
         '''
         # --- expected metrics
         df = expected_results_df()
-        df.columns = [
-            self.splitter.join([self.expt_ch, x])
-            if x in self.metric_names else x for x in df.columns
-        ]
         df.index = df[self.key_col]
         df = df.drop([self.key_col], axis=1)
         return df
@@ -260,6 +267,11 @@ class MetricsComparison(MetricsComparisonData):
             dfs[ch] = cur_df
             avgs[ch] = list(cur_df_avg)
             stds[ch] = list(cur_df_std)
+        expt_df = self.expected_metrics_df
+        expt_avg_df = pd.DataFrame(expt_df.mean(), columns=['Avg']).T
+        dfs[self.expt_ch] = pd.concat([expt_df, expt_avg_df], axis=0)
+        avgs[self.expt_ch] = list(expt_df.mean())
+        stds[self.expt_ch] = list(expt_df.std())
         # ---
         fpath_tmp = os.path.join(res_dir, 'metrics_%s.png')
         # --- 3 channels
@@ -267,7 +279,7 @@ class MetricsComparison(MetricsComparisonData):
         suptitle = 'Computed MetricsComparison'
         _plot_multi_bar(dfs, self.metric_names, suptitle, fig_path)
         # --- Each channel
-        for ch in self.channels:
+        for ch in list(self.channels) + [self.expt_ch]:
             fig_path = fpath_tmp % ch
             df_1ch = {ch: dfs[ch]}
             fig_path = fpath_tmp % ch

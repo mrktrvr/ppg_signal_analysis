@@ -40,15 +40,14 @@ class Plotter(DataProcessor):
         self.expt_metrics_df = expected_results_df()
         self.df = None
         self.file_name = None
-        self.raw_data = {}
-        self.metrics = {}
+        self.signals = {}
+        self.times = {}
+        self.peaks = {}
+        self.ibis = {}
+        self.is_gaps = {}
+        self.computed_metrics = {}
+
         self.expt_metrics = None
-        self.metric_strs = {}
-        self.filt_times = {}
-        self.filt_data = {}
-        self.filt_peaks = {}
-        self.raw_peaks = {}
-        self.is_filt_time_gaps = {}
 
     def set_data(self, df, file_name):
         '''
@@ -61,57 +60,81 @@ class Plotter(DataProcessor):
         '''
         self.df = df
         self.file_name = file_name
-        self.raw_data = {}
-        self.metrics = {}
+        self.signals = {'raw': {}, 'processed': {}}
+        self.times = {'raw': {}, 'processed': {}}
+        self.peaks = {'raw': {}, 'processed': {}}
+        self.ibis = {'raw': {}, 'processed': {}}
+        self.is_gaps = {'raw': {}, 'processed': {}}
+        self.computed_metrics = {'raw': {}, 'processed': {}}
         self.expt_metrics = None
-        self.metric_strs = {}
-        self.filt_times = {}
-        self.filt_data = {}
-        self.filt_peaks = {}
-        self.is_filt_time_gaps = {}
         # --- raw data
-        self.raw_time = np.copy(df['time'].values)
-        # --- mask to find time gap in raw data
-        raw_time_dlt = np.diff(self.raw_time, prepend=0)
-        self.is_raw_time_gap = raw_time_dlt > self.time_delta_th
         # --- Create plotting data for each channel
         for ch in self.channels:
             # --- raw data
-            self.raw_data[ch] = np.copy(df[ch].values)
+            raw_signal = np.copy(df[ch].values)
+            raw_times = np.copy(df['time'].values)
+            # --- mask to find time gap in raw data
+            raw_time_dlt = np.diff(raw_times, prepend=0)
+            self.is_gaps['raw'][ch] = raw_time_dlt > self.time_delta_th
             # --- preprocessing
-            filt_time, filt_data = self.preprocess(self.raw_time,
-                                                   self.raw_data[ch])
-            # --- processed data
-            self.filt_data[ch] = filt_data
-            # --- timestamps for processed data
-            self.filt_times[ch] = filt_time
+            filt_times, filt_signal = self.preprocess(raw_times, raw_signal)
+            self.signals['raw'][ch] = raw_signal
+            self.signals['processed'][ch] = filt_signal
+            self.times['raw'][ch] = np.copy(raw_times)
+            self.times['processed'][ch] = filt_times
             # --- peaks in raw data
-            self.raw_peaks[ch] = self.find_peaks(df[ch])
+            raw_peaks, raw_ibi = self.peaks_and_ibis(raw_times, raw_signal)
+            self.peaks['raw'][ch] = raw_peaks
+            self.ibis['raw'][ch] = raw_ibi
             # --- peaks in processed data
-            self.filt_peaks[ch] = self.find_peaks(filt_data)
+            filt_peaks, filt_ibi = self.peaks_and_ibis(filt_times, filt_signal)
+            self.peaks['processed'][ch] = filt_peaks
+            self.ibis['processed'][ch] = filt_ibi
             # --- compute cardiac metrics
-            self.metrics[ch] = self.metrics_extractor(filt_time, filt_data)
-            filt_time_dlt = np.diff(filt_time, prepend=0)
-            self.is_filt_time_gaps[ch] = filt_time_dlt > self.time_delta_th
+            metrics = self.metrics_extractor(filt_times, filt_signal)
+            self.computed_metrics['processed'][ch] = metrics
+            filt_time_dlt = np.diff(filt_times, prepend=0)
+            self.is_gaps['processed'][ch] = filt_time_dlt > self.time_delta_th
         # --- expected metrics
         mask = self.expt_metrics_df['File'] == file_name
         self.expt_metrics = self.expt_metrics_df[mask].to_dict('list')
         self.expt_metrics = {k: v[0] for k, v in self.expt_metrics.items()}
-        # --- metric texts
-        self.metric_strs = {}
-        expt = ','.join([
-            '%s:%6.2f' % (mn, self.expt_metrics[mn])
-            for mn in self.metric_names
-        ])
-        for ch in self.channels:
-            estm = ','.join([
-                '%s:%6.2f' % (mn, self.metrics[ch][mn])
-                for mn in self.metric_names
-            ])
-            txt = '\n'.join(['Truth:%s' % expt, 'Estim:%s' % estm])
-            self.metric_strs[ch] = txt
 
-    def plot_time_v_ch_vals(self):
+    def plot_peaks_and_ibi(self, res_dir):
+        n_cols = 2
+        n_rows = len(self.channels)
+        fig = plt.figure(figsize=(6 * n_cols, 4 * n_rows))
+        i = 1
+        n_bins = 101
+        for ch in self.channels:
+            ibi = self.ibis['processed'][ch]
+            dlt_ibi = np.abs(np.diff(ibi))
+            ibi_bins = np.linspace(500, 1500, n_bins)
+            dlt_ibi_bins = np.linspace(0, 500, n_bins)
+            # --- IBI
+            ax = fig.add_subplot(n_rows, n_cols, i)
+            ax.hist(ibi, bins=ibi_bins)
+            ax.set_title('IBI %s' % ch, fontsize='small')
+            ax.set_xlabel('IBI', fontsize='small')
+            ax.set_ylabel('Freq', fontsize='small')
+            ax.tick_params(axis='both', labelsize='small')
+            ax.grid(True)
+            i += 1
+            # --- Delta IBI
+            ax = fig.add_subplot(n_rows, n_cols, i)
+            ax.hist(dlt_ibi, bins=dlt_ibi_bins)
+            ax.set_title('Delta IBI %s' % ch, fontsize='small')
+            ax.set_xlabel('Delta IBI', fontsize='small')
+            ax.set_ylabel('Freq', fontsize='small')
+            ax.tick_params(axis='both', labelsize='small')
+            ax.grid(True)
+            i += 1
+        suptitle = self.file_name
+        plt.suptitle(suptitle)
+        plt.tight_layout()
+        self.savefig(res_dir, 'peaks_ibis')
+
+    def plot_time_v_ch_vals(self, res_dir):
         '''
         Plots before and after signals for each channel.
         '''
@@ -131,6 +154,19 @@ class Plotter(DataProcessor):
         suptitle = self.file_name
         plt.suptitle(suptitle)
         plt.tight_layout()
+        self.savefig(res_dir, 'raw_vs_filtered')
+
+    def savefig(self, res_dir, fig_name):
+        '''
+        save current figure.
+
+        @Args
+        res_dir: directory path to store image
+        '''
+        fig_name = '-'.join([fig_name, self.file_name]) + '.png'
+        fig_path = os.path.join(res_dir, fig_name)
+        plt.savefig(fig_path)
+        print('Saved: %s' % fig_path)
 
     def _plot_raw_data(self, ax, ch):
         '''
@@ -141,10 +177,10 @@ class Plotter(DataProcessor):
         ch (str): channel ('Red', 'Green', or 'Blue')
         '''
         data_name = 'Raw'
-        xpos = self.raw_time
-        ypos = self.raw_data[ch]
-        is_gap = self.is_raw_time_gap
-        peaks = self.raw_peaks[ch]
+        xpos = self.times['raw'][ch]
+        ypos = self.signals['raw'][ch]
+        peaks = self.peaks['raw'][ch]
+        is_gap = self.is_gaps['raw'][ch]
         lbl = '%s(%d)' % (data_name, len(ypos))
         col = 'cyan'
         ax.plot(xpos, ypos, '-', label=lbl, color=col)
@@ -170,10 +206,10 @@ class Plotter(DataProcessor):
         ch (str): channel ('Red', 'Green', or 'Blue')
         '''
         data_name = 'Filtered'
-        xpos = self.filt_times[ch]
-        ypos = self.filt_data[ch]
-        peaks = self.filt_peaks[ch]
-        is_gap = self.is_filt_time_gaps[ch]
+        xpos = self.times['processed'][ch]
+        ypos = self.signals['processed'][ch]
+        peaks = self.peaks['processed'][ch]
+        is_gap = self.is_gaps['processed'][ch]
         lbl = '%s(%d)' % (data_name, len(ypos))
         col = 'orange'
         ax.plot(xpos, ypos, label=lbl, color=col)
@@ -184,7 +220,15 @@ class Plotter(DataProcessor):
         col = 'red'
         ax.plot(xpos[peaks], ypos[peaks], 'x', label=lbl, color=col)
         if self.show_metrics:
-            txt = self.metric_strs[ch]
+            expt = ','.join([
+                '%s:%6.2f' % (mn, self.expt_metrics[mn])
+                for mn in self.metric_names
+            ])
+            estm = ','.join([
+                '%s:%6.2f' % (mn, self.computed_metrics[ch][mn])
+                for mn in self.metric_names
+            ])
+            txt = '\n'.join(['Truth:%s' % expt, 'Estim:%s' % estm])
             prm = dict(va='top', ha='left', fontsize='small')
             ax.text(0, ypos.max(), txt, **prm)
         ax.set_title('Filtered Signal (%s)' % ch, fontsize='small')
@@ -193,18 +237,6 @@ class Plotter(DataProcessor):
         ax.tick_params(axis='both', labelsize='small')
         ax.legend(loc=8, fontsize='small', ncol=3)
         ax.grid(True)
-
-    def savefig(self, res_dir):
-        '''
-        save current figure.
-
-        @Args
-        res_dir: directory path to store image
-        '''
-        fig_name = '-'.join(['raw_vs_filtered', self.file_name]) + '.png'
-        fig_path = os.path.join(res_dir, fig_name)
-        plt.savefig(fig_path)
-        print('Saved: %s' % fig_path)
 
 
 def main():
@@ -219,9 +251,9 @@ def main():
         # --- set current data
         plotter.set_data(df, file_name)
         # --- plot signals
-        plotter.plot_time_v_ch_vals()
-        # --- save image
-        plotter.savefig(res_dir)
+        plotter.plot_time_v_ch_vals(res_dir)
+        # --- plot ibis
+        plotter.plot_peaks_and_ibi(res_dir)
 
 
 if __name__ == '__main__':

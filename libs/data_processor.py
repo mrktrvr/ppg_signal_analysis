@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from scipy.signal import butter
+from scipy.signal import buttord
 from scipy.signal import filtfilt
 from scipy.signal import find_peaks
 
@@ -33,11 +34,12 @@ class PreProcessor():
         '''
         self.fs = args.get('fs', 75)
         self.bandpass_lowcut = args.get('bandpass_lowcut', 0.5)
-        self.bandpass_highcut = args.get('bandpass_highcut', 5)
-        self.bandpass_order = args.get('bandpass_order', 2)
+        self.bandpass_highcut = args.get('bandpass_highcut', 4)
+        self.bandpass_order = args.get('bandpass_order', 4)
         self.uniform_filter_size = args.get('uniform_filter_size', 0)
-        self.savgol_win_len = args.get('savgol_win_len', 21)
+        self.savgol_win_len = args.get('savgol_win_len', 11)
         self.savgol_polyorder = args.get('savgol_polyorder', 2)
+        self.time_gap_th = args.get('time_gap_threshold', 10 / self.fs)
 
     def bandpass_filter(self, signal, lowcut=None, highcut=None, order=None):
         '''
@@ -62,13 +64,13 @@ class PreProcessor():
         low = lowcut / nyq
         # --- Normalised high cutoff frequency
         high = highcut / nyq
-        # --- 2nd-order Butterworth bandpass filter
+        # --- Butterworth bandpass filter
         b, a = butter(order, [low, high], btype='band')
         # --- Apply the filter with zero-phase distortion
         ret = filtfilt(b, a, signal)
         return ret
 
-    def _sig_reg_liner_interp(self, org_times, org_sig):
+    def _sig_reg_linear_interp(self, org_times, org_sig):
         '''
         Interpolate signal to regularise time intervals
         using linear interpolation
@@ -122,9 +124,10 @@ class PreProcessor():
         new_signal (np.array): interpolated signal
         '''
         # --- Interpolate to regular time intervals
-        new_times, new_sig = self._sig_reg_liner_interp(org_times, org_sig)
+        new_times, new_sig = self._sig_reg_linear_interp(org_times, org_sig)
         # new_times, new_sig = self._sig_reg_skip_gaps(org_times, org_sig)
         # new_times, new_sig = org_times, org_sig
+
         return new_times, new_sig
 
     def signal_smoother(self, signal):
@@ -161,6 +164,72 @@ class PreProcessor():
         dst = scaler.fit_transform(np.atleast_2d(src).T)[:, 0]
         return dst
 
+    def z_score_normalise(self, src_signal):
+        '''
+        Z-Score normalisation
+
+        @Args
+        src_signal (np.array): original signal
+
+        @Returns
+        dst_signal (np.array): processed signal
+        '''
+        mean = np.mean(src_signal)
+        std = np.std(src_signal)
+        dst_signal = (src_signal - mean) / std
+        return dst_signal
+
+    def z_score_normalise_sliding_window(self, src_signal, win_size):
+        half_window = win_size // 2
+        dst_signal = np.zeros_like(src_signal)
+        for i in range(len(src_signal)):
+            start = max(0, i - half_window)
+            end = min(len(src_signal), i + half_window)
+            window = src_signal[start:end]
+            mean = np.mean(window)
+            std = np.std(window)
+            if std > 0:
+                dst_signal[i] = (src_signal[i] - mean) / std
+            else:
+                dst_signal[i] = 0
+        return dst_signal
+
+    def time_gap_filler(self, times, signal):
+        diffs = np.diff(times, prepend=0)
+        condition = diffs > self.time_gap_th
+        if sum(condition) == 0:
+            new_times = times
+            new_signal = signal
+        else:
+            new_times_list = []
+            new_sigs_list = []
+            large_diffs = diffs[condition]
+            locs = np.where(condition)[0]
+            dt_expt = 1 / self.fs
+            i = 0
+            for d, l in zip(large_diffs, locs):
+                new_times_list.append(times[i:l])
+                new_sigs_list.append(signal[i:l])
+                n_missing = int(np.round(d / dt_expt)) - 1
+                dt_bgn = times[l - 1]
+                dt_end = times[l] - (1 / self.fs)
+                filled_times = np.linspace(dt_bgn, dt_end, n_missing)
+                if l > n_missing:
+                    filled_sigs = signal[l - n_missing:l]
+                else:
+                    n_rep = n_missing // l
+                    n_res = n_missing % l
+                    res = signal[l - n_res:l]
+                    filled_sigs = np.concat([signal[0:l]] * n_rep + [res])
+                new_times_list.append(filled_times)
+                new_sigs_list.append(filled_sigs)
+                i = l
+            new_times_list.append(times[i:])
+            new_sigs_list.append(signal[i:])
+            new_times = np.concatenate(new_times_list)
+            new_signal = np.concatenate(new_sigs_list)
+        return new_times, new_signal
+
     def preprocess(self, times, signal):
         '''
         Signal Preprocessing
@@ -176,12 +245,17 @@ class PreProcessor():
         # --- uniform filter
         if self.uniform_filter_size != 0:
             signal = uniform_filter1d(signal, size=self.uniform_filter_size)
+        # --- time gap filling
+        # times, signal = self.time_gap_filler(times, signal)
         # --- time interval regularising
         times, signal = self.signal_regulariser(times, signal)
         # --- smoothing
         signal = self.signal_smoother(signal)
         # --- bandpass filtering
         signal = self.bandpass_filter(signal)
+        # --- z-score normalisation
+        # signal = self.z_score_normalise(signal)
+        signal = self.z_score_normalise_sliding_window(signal, 20)
         # --- min max scaling
         # signal = self.min_max_scale(signal)
         return times, signal
@@ -227,22 +301,45 @@ class MetricsExtractor():
         )
         return peaks
 
-    def metrics_extractor(self, times, signal):
+    def peaks_and_ibis(self, times, signal):
         '''
-        Compute cardiac metrics from a preprocessed signal.
+        Find peaks and time delta between peaks
 
         @Args
         times (np.array): Regularized time vector
         signal (np.array): Preprocessed signal
 
         @Returns
-        metrics (dict): Computed metrics, {HR, rMSSD, SDNN, pNN50}
+        peaks (np.array): indices of peaks
+        ibi (np.array): time delta between peaks
         '''
         # --- peaks
         peaks = self.find_peaks(signal)
         peak_times = times[peaks]
         # --- Time interval between consecutive peaks (milliseconds)
         ibi = np.diff(peak_times) * 1000
+        if len(ibi) != 0:
+            # q_low, q_high = 0.1, 0.9
+            q_low, q_high = 0, 1
+            mask = np.all([
+                ibi > np.quantile(ibi, q=q_low),
+                ibi < np.quantile(ibi, q=q_high),
+            ], 0)
+            ibi = ibi[mask]
+        return peaks, ibi
+
+    def metrics(self, times, peaks, ibi):
+        '''
+        Compute cardiac metrics.
+
+        @Args
+        times (np.array): Regularized time vector
+        peaks (np.array): indices of peaks
+        ibi (np.array): time delta between peaks
+
+        @Returns
+        metrics (dict): Computed metrics, {HR, rMSSD, SDNN, pNN50}
+        '''
         # --- delta IBI
         diff_ibi = np.diff(ibi)
         # --- Heart Rate (HR)
@@ -260,6 +357,21 @@ class MetricsExtractor():
             'SDNN': sdnn,
             'pNN50': pnn50,
         }
+        return metrics
+
+    def metrics_extractor(self, times, signal):
+        '''
+        Compute cardiac metrics from a preprocessed signal.
+
+        @Args
+        times (np.array): Regularized time vector
+        signal (np.array): Preprocessed signal
+
+        @Returns
+        metrics (dict): Computed metrics, {HR, rMSSD, SDNN, pNN50}
+        '''
+        peaks, ibi = self.peaks_and_ibis(times, signal)
+        metrics = self.metrics(times, peaks, ibi)
         return metrics
 
 
