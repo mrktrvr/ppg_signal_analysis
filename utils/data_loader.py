@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import numpy as np
 import pandas as pd
 
 CDIR = os.path.dirname(os.path.abspath(__file__))
@@ -84,7 +85,40 @@ def iter_data_df():
         df = csv_to_df(file_path)
         file_name = os.path.splitext(os.path.basename(file_path))[0]
         file_name = FILE_NO_MAP[file_name]
+        df = merge_channels(df)
         yield df, file_name
+
+
+def merge_channels(df):
+    from sklearn.decomposition import PCA
+    df['R2G62B'] = df['Red'] * 0.2 + df['Green'] * 0.6 + df['Blue'] * 0.2
+    df['R1G1B1'] = (df['Red'] + df['Green'] + df['Blue']) / 3
+    X = np.vstack((df['Red'], df['Green'], df['Blue'])).T
+    pca = PCA(n_components=1)
+    df['PCA'] = pca.fit_transform(X).flatten()
+    y, cb, cr = rgb_to_ycbcr(df['Red'], df['Green'], df['Blue'])
+    df['Y'] = y
+    df['Cb'] = cb
+    df['Cr'] = cr
+    return df
+
+
+def rgb_to_ycbcr(r, g, b):
+    """
+    Convert RGB channels to YCbCr and return only Y (luminance) channel.
+
+    Args:
+        r, g, b (np.array): Red, Green, Blue channels.
+    Returns:
+        np.array: Luminance (Y) signal.
+    """
+    r = r.astype(np.float32)
+    g = g.astype(np.float32)
+    b = b.astype(np.float32)
+    y = 0.299 * r + 0.587 * g + 0.114 * b
+    cb = -0.168736 * r - 0.331264 * g + 0.5 * b
+    cr = 0.5 * r - 0.418688 * g - 0.081312 * b
+    return y, cb, cr
 
 
 def expected_results_df():

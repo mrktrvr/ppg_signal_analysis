@@ -34,12 +34,13 @@ class PreProcessor():
         '''
         self.fs = args.get('fs', 75)
         self.bandpass_lowcut = args.get('bandpass_lowcut', 0.5)
-        self.bandpass_highcut = args.get('bandpass_highcut', 4)
-        self.bandpass_order = args.get('bandpass_order', 4)
+        self.bandpass_highcut = args.get('bandpass_highcut', 5)
+        self.bandpass_order = args.get('bandpass_order', 2)
         self.uniform_filter_size = args.get('uniform_filter_size', 0)
-        self.savgol_win_len = args.get('savgol_win_len', 11)
+        self.savgol_win_len = args.get('savgol_win_len', 21)
         self.savgol_polyorder = args.get('savgol_polyorder', 2)
-        self.time_gap_th = args.get('time_gap_threshold', 10 / self.fs)
+        # self.time_gap_th = args.get('time_gap_threshold', 10 / self.fs)
+        self.time_gap_th = args.get('time_gap_threshold', 0)
 
     def bandpass_filter(self, signal, lowcut=None, highcut=None, order=None):
         '''
@@ -195,6 +196,8 @@ class PreProcessor():
         return dst_signal
 
     def time_gap_filler(self, times, signal):
+        if self.time_gap_th == 0:
+            return times, signal
         diffs = np.diff(times, prepend=0)
         condition = diffs > self.time_gap_th
         if sum(condition) == 0:
@@ -246,7 +249,7 @@ class PreProcessor():
         if self.uniform_filter_size != 0:
             signal = uniform_filter1d(signal, size=self.uniform_filter_size)
         # --- time gap filling
-        # times, signal = self.time_gap_filler(times, signal)
+        times, signal = self.time_gap_filler(times, signal)
         # --- time interval regularising
         times, signal = self.signal_regulariser(times, signal)
         # --- smoothing
@@ -255,7 +258,7 @@ class PreProcessor():
         signal = self.bandpass_filter(signal)
         # --- z-score normalisation
         # signal = self.z_score_normalise(signal)
-        signal = self.z_score_normalise_sliding_window(signal, 20)
+        # signal = self.z_score_normalise_sliding_window(signal, 20)
         # --- min max scaling
         # signal = self.min_max_scale(signal)
         return times, signal
@@ -281,6 +284,8 @@ class MetricsExtractor():
         self.fs = args.get('fs', 75)
         self.peak_distance_factor = args.get('peak_distance_factor', 0.5)
         self.peak_prominence_factor = args.get('peak_prominence_factor', 0.5)
+        self.ibi_q_low = args.get('ibi_q_low', 0)
+        self.ibi_q_high = args.get('ibi_q_hight', 1)
 
     def find_peaks(self, signal):
         '''
@@ -319,11 +324,9 @@ class MetricsExtractor():
         # --- Time interval between consecutive peaks (milliseconds)
         ibi = np.diff(peak_times) * 1000
         if len(ibi) != 0:
-            # q_low, q_high = 0.1, 0.9
-            q_low, q_high = 0, 1
             mask = np.all([
-                ibi > np.quantile(ibi, q=q_low),
-                ibi < np.quantile(ibi, q=q_high),
+                ibi > np.quantile(ibi, q=self.ibi_q_low),
+                ibi < np.quantile(ibi, q=self.ibi_q_high),
             ], 0)
             ibi = ibi[mask]
         return peaks, ibi
@@ -397,7 +400,17 @@ class DataProcessor(PreProcessor, MetricsExtractor):
         PreProcessor.__init__(self, **args)
         MetricsExtractor.__init__(self, **args)
 
-        self.channels = ['Red', 'Green', 'Blue']
+        self.channels = [
+            'Red',
+            'Green',
+            'Blue',
+            # 'R1G1B1',
+            # 'R2G62B',
+            # 'PCA',
+            'Y',
+            # 'Cb',
+            # 'Cr',
+        ]
         self.metric_names = ['HR', 'rMSSD', 'SDNN', 'pNN50']
 
     def process(self, df, ch):
