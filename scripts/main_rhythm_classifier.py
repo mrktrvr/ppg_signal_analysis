@@ -66,7 +66,7 @@ def _classifiation_by_expected_metrics(clf):
         # --- label to the classificatoin result
         res = clf.label(ret)
         # --- store result
-        all_res[i] = {'Expetcted': res}
+        all_res[i] = {'Expected': res}
     # --- dictionary to pd.DataFrame
     res_df = pd.DataFrame(all_res).T
     return res_df
@@ -87,11 +87,15 @@ def main():
     file_path = os.path.join(res_dir, 'sinus_afib.csv')
     computed_res_df.to_csv(file_path)
     print('Saved: %s' % file_path)
+    # --- concat df
+    df = pd.concat([computed_res_df, expected_res_df], axis=1)
     # --- print result
     print('Classification results from computed metrics')
     print(computed_res_df)
     print('Classification results from expected metrics')
     print(expected_res_df)
+    print('---')
+    print(df)
 
 
 if __name__ == '__main__':

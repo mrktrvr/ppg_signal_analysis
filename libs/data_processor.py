@@ -407,9 +407,10 @@ class DataProcessor(PreProcessor, MetricsExtractor):
             # 'R1G1B1',
             # 'R2G62B',
             # 'PCA',
-            'Y',
+            # 'Y',
             # 'Cb',
             # 'Cr',
+            # 'L',
         ]
         self.metric_names = ['HR', 'rMSSD', 'SDNN', 'pNN50']
 

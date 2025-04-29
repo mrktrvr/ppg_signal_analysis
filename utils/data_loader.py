@@ -91,15 +91,15 @@ def iter_data_df():
 
 def merge_channels(df):
     from sklearn.decomposition import PCA
-    df['R2G62B'] = df['Red'] * 0.2 + df['Green'] * 0.6 + df['Blue'] * 0.2
-    df['R1G1B1'] = (df['Red'] + df['Green'] + df['Blue']) / 3
-    X = np.vstack((df['Red'], df['Green'], df['Blue'])).T
+    r, g, b = df['Red'], df['Green'], df['Blue']
+    # --- weighted average
+    df['R2G62B'] = r * 0.2 + g * 0.6 + b * 0.2
+    df['R1G1B1'] = (r + g + b) / 3
+    # --- PCA
     pca = PCA(n_components=1)
-    df['PCA'] = pca.fit_transform(X).flatten()
-    y, cb, cr = rgb_to_ycbcr(df['Red'], df['Green'], df['Blue'])
-    df['Y'] = y
-    df['Cb'] = cb
-    df['Cr'] = cr
+    df['PCA'] = pca.fit_transform(np.vstack((r, g, b)).T).flatten()
+    # --- YCbCr
+    df['Y'], df['Cb'], df['Cr'] = rgb_to_ycbcr(r, g, b)
     return df
 
 
@@ -119,6 +119,69 @@ def rgb_to_ycbcr(r, g, b):
     cb = -0.168736 * r - 0.331264 * g + 0.5 * b
     cr = 0.5 * r - 0.418688 * g - 0.081312 * b
     return y, cb, cr
+
+
+def rgb_to_hsv_v(r, g, b):
+    """
+    Convert RGB channels to HSV and return only V (Value) channel.
+
+    Args:
+        r, g, b (np.array): Red, Green, Blue channels.
+    Returns:
+        np.array: V (brightness) signal.
+    """
+    r = r / 255.0
+    g = g / 255.0
+    b = b / 255.0
+
+    cmax = np.maximum.reduce([r, g, b])
+    cmin = np.minimum.reduce([r, g, b])
+    v = cmax  # In HSV, Value = max(R, G, B)
+
+    return v
+
+
+def rgb_to_lab(r, g, b):
+    """
+    Convert RGB channels to CIE LAB and return only L (Lightness) channel.
+    Approximate version without full color calibration.
+
+    Args:
+        r, g, b (np.array): Red, Green, Blue channels.
+
+    Returns:
+        np.array: L (lightness) signal.
+    """
+    # Step 1: RGB to XYZ
+    # r = r / 255.0
+    # g = g / 255.0
+    # b = b / 255.0
+
+    # Gamma correction (sRGB)
+    r = np.where(r > 0.04045, ((r + 0.055) / 1.055)**2.4, r / 12.92)
+    g = np.where(g > 0.04045, ((g + 0.055) / 1.055)**2.4, g / 12.92)
+    b = np.where(b > 0.04045, ((b + 0.055) / 1.055)**2.4, b / 12.92)
+
+    x = 0.4124 * r + 0.3576 * g + 0.1805 * b
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    z = 0.0193 * r + 0.1192 * g + 0.9505 * b
+
+    # Normalize for D65 white point
+    x /= 0.95047
+    y /= 1.00000
+    z /= 1.08883
+
+    # XYZ to LAB
+    def f(t):
+        return np.where(t > 0.008856, t**(1 / 3), (7.787 * t) + (16 / 116))
+
+    fx = f(x)
+    fy = f(y)
+    fz = f(z)
+
+    l = (116 * fy) - 16  # Only L channel
+
+    return l
 
 
 def expected_results_df():
